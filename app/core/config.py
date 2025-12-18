@@ -7,7 +7,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 
+    # Database
     database_url: str
+
+    # MinIO / S3 compatible object storage
+    minio_endpoint: str | None = None
+    minio_access_key: str | None = None
+    minio_secret_key: str | None = None
+    minio_bucket: str | None = None
+    minio_secure: bool = False
 
     def sqlalchemy_database_url(self) -> str:
         url = self.database_url.strip()
@@ -18,7 +26,11 @@ class Settings(BaseSettings):
         return url
 
     def redacted(self) -> dict[str, Any]:
-        return {"database_url": "<redacted>"}
+        return {
+            "database_url": "<redacted>",
+            "minio_endpoint": self.minio_endpoint,
+            "minio_bucket": self.minio_bucket,
+        }
 
 
 @lru_cache(maxsize=1)
