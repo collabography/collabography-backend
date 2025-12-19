@@ -23,9 +23,9 @@ async def upload_layer(
     file: Annotated[UploadFile, File(...)],
     start_sec: Annotated[Decimal, Form(...)],
     end_sec: Annotated[Decimal, Form(...)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     priority: Annotated[int, Form()] = 0,
     label: Annotated[str | None, Form()] = None,
-    db: Annotated[AsyncSession, Depends(get_db)] = Depends(get_db),
 ) -> LayerUploadResponse:
     """레이어 파일 업로드, 프로젝트 연결, 워커 enqueue"""
     return await LayersService.upload_layer(
@@ -45,6 +45,7 @@ async def upload_layer(
     responses={404: {"model": ErrorResponse}},
 )
 async def get_layer(
+    track_id: int,
     layer_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> LayerResponse:
@@ -58,6 +59,7 @@ async def get_layer(
     responses={404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
 )
 async def update_layer(
+    track_id: int,
     layer_id: int,
     data: LayerUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -72,6 +74,7 @@ async def update_layer(
     responses={404: {"model": ErrorResponse}},
 )
 async def delete_layer(
+    track_id: int,
     layer_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:

@@ -19,9 +19,21 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create enum types
-    op.execute("CREATE TYPE assetstatus AS ENUM ('UPLOADED', 'PROCESSING', 'READY', 'FAILED')")
-    op.execute("CREATE TYPE interptype AS ENUM ('STEP', 'LINEAR')")
+    # Create enum types (only if they don't exist)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE assetstatus AS ENUM ('UPLOADED', 'PROCESSING', 'READY', 'FAILED');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE interptype AS ENUM ('STEP', 'LINEAR');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
 
     # Create projects table
     op.create_table(
@@ -58,7 +70,7 @@ def upgrade() -> None:
         sa.Column("num_frames", sa.Integer(), nullable=True),
         sa.Column("num_joints", sa.Integer(), nullable=True),
         sa.Column("pose_model", sa.String(length=100), nullable=True),
-        sa.Column("status", postgresql.ENUM("UPLOADED", "PROCESSING", "READY", "FAILED", name="assetstatus"), nullable=False),
+        sa.Column("status", postgresql.ENUM("UPLOADED", "PROCESSING", "READY", "FAILED", name="assetstatus", create_type=False), nullable=False),
         sa.Column("error_message", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["track_id"], ["tracks.id"], ondelete="CASCADE"),
@@ -91,7 +103,7 @@ def upgrade() -> None:
         sa.Column("time_sec", sa.Numeric(precision=10, scale=3), nullable=False),
         sa.Column("x", sa.Numeric(precision=10, scale=4), nullable=False),
         sa.Column("y", sa.Numeric(precision=10, scale=4), nullable=False),
-        sa.Column("interp", postgresql.ENUM("STEP", "LINEAR", name="interptype"), nullable=False),
+        sa.Column("interp", postgresql.ENUM("STEP", "LINEAR", name="interptype", create_type=False), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["track_id"], ["tracks.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -107,7 +119,7 @@ def upgrade() -> None:
         sa.Column("object_key", sa.String(length=512), nullable=False),
         sa.Column("duration_sec", sa.Numeric(precision=10, scale=3), nullable=True),
         sa.Column("fps", sa.Float(), nullable=True),
-        sa.Column("status", postgresql.ENUM("UPLOADED", "PROCESSING", "READY", "FAILED", name="assetstatus"), nullable=False),
+        sa.Column("status", postgresql.ENUM("UPLOADED", "PROCESSING", "READY", "FAILED", name="assetstatus", create_type=False), nullable=False),
         sa.Column("error_message", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["track_id"], ["tracks.id"], ondelete="CASCADE"),

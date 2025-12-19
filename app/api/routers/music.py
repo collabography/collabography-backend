@@ -21,9 +21,9 @@ router = APIRouter(prefix="/projects/{project_id}/music", tags=["music"])
 async def upload_music(
     project_id: int,
     file: Annotated[UploadFile, File(...)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     duration_sec: Annotated[Decimal | None, Form()] = None,
     bpm: Annotated[Decimal | None, Form()] = None,
-    db: Annotated[AsyncSession, Depends(get_db)] = Depends(get_db),
 ) -> MusicUploadResponse:
     """음악 파일 업로드 및 프로젝트에 연결"""
     object_key, duration, bpm_value = await MusicService.upload_music(
