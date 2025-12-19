@@ -143,7 +143,7 @@ def extract_skeleton_task(
         video_path = _download_video_to_temp(video_object_key)
 
         # 2) Run pose extraction (MediaPipe)
-        data = extract_pose_to_json(str())
+        data = extract_pose_to_json(video_path=str(video_path))
         payload = dump_json_to_bytes(data)
 
         # 3) Upload skeleton JSON back to MinIO

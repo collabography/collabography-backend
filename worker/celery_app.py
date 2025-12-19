@@ -8,6 +8,7 @@ celery_app = Celery(
     "collabography_worker",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
+    include=["worker.tasks.extract_skeleton"],
 )
 
 celery_app.conf.update(
@@ -21,5 +22,3 @@ celery_app.conf.update(
     task_soft_time_limit=25 * 60,  # 25 minutes
 )
 
-# Task 모듈 자동 발견
-celery_app.autodiscover_tasks(["worker.tasks"])
