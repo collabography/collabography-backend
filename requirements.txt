@@ -8,3 +8,10 @@ greenlet>=3.0
 # Object storage client
 minio==7.2.13
 
+# Database migrations
+alembic==1.14.0
+
+# Celery
+celery==5.4.0
+redis==5.2.0
+
