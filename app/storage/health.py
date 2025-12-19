@@ -5,8 +5,7 @@ def check_minio() -> None:
     """Check MinIO availability by listing buckets once.
 
     Raises:
-        MinioNotConfiguredError: when MinIO is not configured.
-        Exception: for any connectivity or auth error.
+        Exception: for any configuration, connectivity, or auth error.
     """
 
     client = get_minio_client()
