@@ -22,18 +22,19 @@ async def upload_layer(
     track_id: int,
     file: Annotated[UploadFile, File(...)],
     start_sec: Annotated[Decimal, Form(...)],
-    end_sec: Annotated[Decimal, Form(...)],
     db: Annotated[AsyncSession, Depends(get_db)],
     priority: Annotated[int, Form()] = 0,
     label: Annotated[str | None, Form()] = None,
 ) -> LayerUploadResponse:
-    """레이어 파일 업로드, 프로젝트 연결, 워커 enqueue"""
+    """레이어 파일 업로드, 프로젝트 연결, 워커 enqueue
+    
+    서버에서 비디오 파일을 분석하여 end_sec을 자동으로 계산합니다.
+    """
     return await LayersService.upload_layer(
         db=db,
         track_id=track_id,
         file=file,
         start_sec=start_sec,
-        end_sec=end_sec,
         priority=priority,
         label=label,
     )

@@ -3,6 +3,7 @@ from decimal import Decimal
 from io import BytesIO
 
 from fastapi import UploadFile
+from mutagen import File as MutagenFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -17,16 +18,33 @@ from app.core.config import get_settings
 
 class LayersService:
     @staticmethod
+    def _extract_video_duration(file_content: bytes) -> Decimal | None:
+        """비디오 파일에서 duration 추출"""
+        try:
+            # BytesIO로 변환하여 mutagen에 전달
+            video_file = MutagenFile(BytesIO(file_content))
+            if video_file is not None and hasattr(video_file, 'info'):
+                duration = video_file.info.length
+                if duration is not None:
+                    return Decimal(str(duration))
+        except (AttributeError, ValueError, TypeError, Exception):
+            # 비디오 파일 분석 실패 시 None 반환
+            pass
+        return None
+
+    @staticmethod
     async def upload_layer(
         db: AsyncSession,
         track_id: int,
         file: UploadFile,
         start_sec: Decimal,
-        end_sec: Decimal,
         priority: int = 0,
         label: str | None = None,
     ) -> LayerResponse:
-        """레이어 파일 업로드, 프로젝트 연결, Kafka enqueue"""
+        """레이어 파일 업로드, 프로젝트 연결, 워커 enqueue
+        
+        서버에서 비디오 파일을 분석하여 end_sec을 자동으로 계산합니다.
+        """
         # 트랙 확인
         track_result = await db.execute(select(Track).where(Track.id == track_id))
         track = track_result.scalar_one_or_none()
@@ -47,6 +65,14 @@ class LayersService:
 
         # 파일 읽기
         file_content = await file.read()
+
+        # 비디오 duration 추출하여 end_sec 계산
+        video_duration = LayersService._extract_video_duration(file_content)
+        if video_duration is not None:
+            end_sec = start_sec + video_duration
+        else:
+            # duration 추출 실패 시 start_sec과 동일하게 설정 (나중에 업데이트 가능)
+            end_sec = start_sec
 
         # MinIO에 업로드
         minio_client.put_object(

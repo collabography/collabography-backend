@@ -1,13 +1,12 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.errors import ErrorResponse
 from app.schemas.music import MusicUploadResponse
 from app.services.music_service import MusicService
-from decimal import Decimal
 
 router = APIRouter(prefix="/projects/{project_id}/music", tags=["music"])
 
@@ -22,16 +21,15 @@ async def upload_music(
     project_id: int,
     file: Annotated[UploadFile, File(...)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    duration_sec: Annotated[Decimal | None, Form()] = None,
-    bpm: Annotated[Decimal | None, Form()] = None,
 ) -> MusicUploadResponse:
-    """음악 파일 업로드 및 프로젝트에 연결"""
+    """음악 파일 업로드 및 프로젝트에 연결
+    
+    서버에서 오디오 파일을 분석하여 duration_sec을 자동으로 계산합니다.
+    """
     object_key, duration, bpm_value = await MusicService.upload_music(
         db=db,
         project_id=project_id,
         file=file,
-        duration_sec=duration_sec,
-        bpm=bpm,
     )
 
     return MusicUploadResponse(
