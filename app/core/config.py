@@ -17,9 +17,9 @@ class Settings(BaseSettings):
     minio_bucket: str | None = None
     minio_secure: bool = False
 
-    # Celery
-    celery_broker_url: str = "redis://localhost:6379/0"
-    celery_result_backend: str = "redis://localhost:6379/0"
+    # Kafka
+    kafka_bootstrap_servers: str = "localhost:9092"
+    kafka_topic_skeleton_extraction: str = "skeleton-extraction"
 
     def sqlalchemy_database_url(self) -> str:
         url = self.database_url.strip()

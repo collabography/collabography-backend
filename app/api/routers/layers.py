@@ -1,61 +1,42 @@
 from typing import Annotated
+from decimal import Decimal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.errors import ErrorResponse
-from app.schemas.layer import (
-    LayerUploadInit,
-    LayerUploadInitResponse,
-    LayerCreate,
-    LayerUpdate,
-    LayerResponse,
-)
+from app.schemas.layer import LayerUploadResponse, LayerUpdate, LayerResponse
 from app.services.layers_service import LayersService
-from datetime import timedelta
 
 router = APIRouter(prefix="/tracks/{track_id}/layers", tags=["layers"])
 
 
 @router.post(
-    "/upload-init",
-    response_model=LayerUploadInitResponse,
-    status_code=201,
-    responses={422: {"model": ErrorResponse}},
-)
-async def init_layer_upload(
-    track_id: int,
-    data: LayerUploadInit,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> LayerUploadInitResponse:
-    """레이어 업로드 presigned URL 발급"""
-    url, object_key = await LayersService.get_upload_url(
-        track_id=track_id,
-        filename=data.filename,
-        content_type=data.content_type,
-    )
-
-    return LayerUploadInitResponse(
-        upload_url=url,
-        object_key=object_key,
-        expires_in=int(timedelta(hours=1).total_seconds()),
-    )
-
-
-@router.post(
-    "",
-    response_model=LayerResponse,
+    "/upload",
+    response_model=LayerUploadResponse,
     status_code=201,
     responses={404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
 )
-async def create_layer(
+async def upload_layer(
     track_id: int,
-    data: LayerCreate,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> LayerResponse:
-    """레이어 생성 (VIDEO 또는 JSON 기반)"""
-    return await LayersService.create_layer(db, track_id, data)
+    file: Annotated[UploadFile, File(...)],
+    start_sec: Annotated[Decimal, Form(...)],
+    end_sec: Annotated[Decimal, Form(...)],
+    priority: Annotated[int, Form()] = 0,
+    label: Annotated[str | None, Form()] = None,
+    db: Annotated[AsyncSession, Depends(get_db)] = Depends(get_db),
+) -> LayerUploadResponse:
+    """레이어 파일 업로드, 프로젝트 연결, 워커 enqueue"""
+    return await LayersService.upload_layer(
+        db=db,
+        track_id=track_id,
+        file=file,
+        start_sec=start_sec,
+        end_sec=end_sec,
+        priority=priority,
+        label=label,
+    )
 
 
 @router.get(
@@ -96,4 +77,3 @@ async def delete_layer(
 ) -> None:
     """레이어 삭제"""
     await LayersService.delete_layer(db, layer_id)
-

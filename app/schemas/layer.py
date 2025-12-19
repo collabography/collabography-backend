@@ -3,38 +3,35 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 
-class LayerUploadInit(BaseModel):
-    """레이어 업로드 presigned URL 요청"""
-
-    filename: str = Field(..., min_length=1)
-    content_type: str = Field(default="video/mp4")
-
-
-class LayerUploadInitResponse(BaseModel):
-    """레이어 업로드 presigned URL 응답"""
-
-    upload_url: str
-    object_key: str
-    expires_in: int
-
-
-class LayerCreate(BaseModel):
-    """레이어 생성 요청"""
-
-    # VIDEO 기반
-    video_object_key: str | None = None
-
-    # JSON 기반 (직접 스켈레톤 JSON 업로드)
-    skeleton_object_key: str | None = None
-    skeleton_fps: float | None = None
-    skeleton_num_frames: int | None = None
-    skeleton_num_joints: int | None = None
+class LayerUploadRequest(BaseModel):
+    """레이어 업로드 요청 (파일 + 메타데이터)"""
 
     # 레이어 메타
-    start_sec: Decimal = Field(..., ge=0)
-    end_sec: Decimal = Field(..., gt=0)
-    priority: int = Field(default=0)
-    label: str | None = Field(None, max_length=255)
+    start_sec: Decimal = Field(..., ge=0, description="시작 시간 (초)")
+    end_sec: Decimal = Field(..., gt=0, description="종료 시간 (초)")
+    priority: int = Field(default=0, description="우선순위 (z-index)")
+    label: str | None = Field(None, max_length=255, description="레이어 라벨")
+
+
+class LayerUploadResponse(BaseModel):
+    """레이어 업로드 응답"""
+
+    id: int
+    track_id: int
+    skeleton_source_id: int
+    start_sec: Decimal
+    end_sec: Decimal
+    priority: int
+    label: str | None = None
+    created_at: str  # ISO format
+
+    # Source 정보
+    source_status: str  # AssetStatus
+    source_object_key: str | None = None
+    source_fps: float | None = None
+    source_num_frames: int | None = None
+    source_num_joints: int | None = None
+    source_error_message: str | None = None
 
 
 class LayerUpdate(BaseModel):
@@ -68,4 +65,3 @@ class LayerResponse(BaseModel):
 
     class Config:
         from_attributes = True
-

@@ -1,40 +1,32 @@
 from datetime import datetime
 from decimal import Decimal
+from io import BytesIO
 
+from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import NotFoundError
 from app.models import Track, SkeletonSource, SkeletonLayer, AssetStatus
-from app.schemas.layer import LayerCreate, LayerUpdate, LayerResponse
-from app.integrations.minio_client import get_presigned_put_url
-from app.integrations.celery_client import enqueue_extract_skeleton
-from datetime import timedelta
+from app.schemas.layer import LayerUpdate, LayerResponse
+from app.integrations.minio_client import get_minio_client
+from app.integrations.kafka_client import enqueue_skeleton_extraction
+from app.core.config import get_settings
 
 
 class LayersService:
     @staticmethod
-    async def get_upload_url(
+    async def upload_layer(
+        db: AsyncSession,
         track_id: int,
-        filename: str,
-        content_type: str = "video/mp4",
-    ) -> tuple[str, str]:
-        """레이어 업로드 presigned URL 발급"""
-        # object_key 생성: videos/{track_id}/{filename}
-        object_key = f"videos/{track_id}/{filename}"
-
-        url = get_presigned_put_url(
-            object_key=object_key,
-            expires=timedelta(hours=1),
-            content_type=content_type,
-        )
-
-        return url, object_key
-
-    @staticmethod
-    async def create_layer(db: AsyncSession, track_id: int, data: LayerCreate) -> LayerResponse:
-        """레이어 생성 (VIDEO 또는 JSON 기반)"""
+        file: UploadFile,
+        start_sec: Decimal,
+        end_sec: Decimal,
+        priority: int = 0,
+        label: str | None = None,
+    ) -> LayerResponse:
+        """레이어 파일 업로드, 프로젝트 연결, Kafka enqueue"""
         # 트랙 확인
         track_result = await db.execute(select(Track).where(Track.id == track_id))
         track = track_result.scalar_one_or_none()
@@ -42,73 +34,62 @@ class LayersService:
         if not track:
             raise NotFoundError("Track", track_id)
 
-        # VIDEO 기반인지 JSON 기반인지 확인
-        if data.video_object_key:
-            # VIDEO 기반: SkeletonSource를 PROCESSING으로 생성하고 Celery 작업 enqueue
-            source = SkeletonSource(
-                track_id=track_id,
-                status=AssetStatus.PROCESSING,
-                created_at=datetime.utcnow(),
-            )
-            db.add(source)
-            await db.flush()
+        # object_key 생성: videos/{track_id}/{filename}
+        object_key = f"videos/{track_id}/{file.filename}"
 
-            # 레이어 생성
-            layer = SkeletonLayer(
-                track_id=track_id,
-                skeleton_source_id=source.id,
-                start_sec=data.start_sec,
-                end_sec=data.end_sec,
-                priority=data.priority,
-                label=data.label,
-                created_at=datetime.utcnow(),
-            )
-            db.add(layer)
-            await db.flush()
+        # MinIO에 업로드
+        settings = get_settings()
+        minio_client = get_minio_client()
+        bucket = settings.minio_bucket
 
-            # Celery 작업 enqueue
-            enqueue_extract_skeleton(
-                source_id=source.id,
-                video_object_key=data.video_object_key,
-                project_id=track.project_id,
-                track_slot=track.slot,
-            )
+        if not bucket:
+            raise ValueError("MinIO bucket not configured")
 
-            await db.commit()
-            await db.refresh(layer)
-            await db.refresh(source)
+        # 파일 읽기
+        file_content = await file.read()
 
-        elif data.skeleton_object_key:
-            # JSON 기반: SkeletonSource를 READY로 생성
-            source = SkeletonSource(
-                track_id=track_id,
-                object_key=data.skeleton_object_key,
-                fps=data.skeleton_fps,
-                num_frames=data.skeleton_num_frames,
-                num_joints=data.skeleton_num_joints,
-                status=AssetStatus.READY,
-                created_at=datetime.utcnow(),
-            )
-            db.add(source)
-            await db.flush()
+        # MinIO에 업로드
+        minio_client.put_object(
+            bucket_name=bucket,
+            object_name=object_key,
+            data=BytesIO(file_content),
+            length=len(file_content),
+            content_type=file.content_type or "video/mp4",
+        )
 
-            # 레이어 생성
-            layer = SkeletonLayer(
-                track_id=track_id,
-                skeleton_source_id=source.id,
-                start_sec=data.start_sec,
-                end_sec=data.end_sec,
-                priority=data.priority,
-                label=data.label,
-                created_at=datetime.utcnow(),
-            )
-            db.add(layer)
-            await db.commit()
-            await db.refresh(layer)
-            await db.refresh(source)
+        # SkeletonSource를 PROCESSING으로 생성
+        source = SkeletonSource(
+            track_id=track_id,
+            status=AssetStatus.PROCESSING,
+            created_at=datetime.utcnow(),
+        )
+        db.add(source)
+        await db.flush()
 
-        else:
-            raise ValueError("Either video_object_key or skeleton_object_key must be provided")
+        # 레이어 생성
+        layer = SkeletonLayer(
+            track_id=track_id,
+            skeleton_source_id=source.id,
+            start_sec=start_sec,
+            end_sec=end_sec,
+            priority=priority,
+            label=label,
+            created_at=datetime.utcnow(),
+        )
+        db.add(layer)
+        await db.flush()
+
+        # Kafka에 스켈레톤 추출 작업 enqueue
+        enqueue_skeleton_extraction(
+            source_id=source.id,
+            video_object_key=object_key,
+            project_id=track.project_id,
+            track_slot=track.slot,
+        )
+
+        await db.commit()
+        await db.refresh(layer)
+        await db.refresh(source)
 
         return LayersService._layer_to_response(layer, source)
 
@@ -185,4 +166,3 @@ class LayersService:
             source_num_joints=source.num_joints,
             source_error_message=source.error_message,
         )
-

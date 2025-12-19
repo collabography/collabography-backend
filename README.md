@@ -11,7 +11,7 @@ Collabography는 3명의 댄서(3개 Track)의 스켈레톤 클립(Skeleton Laye
 - **FastAPI**: API 서버
 - **PostgreSQL**: 데이터베이스
 - **MinIO**: 객체 스토리지 (S3 호환)
-- **Celery + Redis**: 비동기 작업 큐
+- **Kafka**: 메시지 큐 (워커 작업 enqueue)
 - **Alembic**: 데이터베이스 마이그레이션
 
 ## 로컬 실행 (Docker Compose 권장)
@@ -31,9 +31,9 @@ MINIO_SECRET_KEY=minioadmin
 MINIO_BUCKET=collabography
 MINIO_SECURE=false
 
-# Celery
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/0
+# Kafka
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+KAFKA_TOPIC_SKELETON_EXTRACTION=skeleton-extraction
 ```
 
 ### 2. Docker Compose로 실행
@@ -46,9 +46,9 @@ docker-compose up -d
 이 명령은 다음 서비스를 시작합니다:
 - PostgreSQL (포트 5432)
 - MinIO (포트 9000, 콘솔 9001)
-- Redis (포트 6379)
+- Zookeeper (포트 2181)
+- Kafka (포트 9092)
 - API 서버 (포트 8000)
-- Celery Worker
 
 ### 3. 데이터베이스 마이그레이션
 
@@ -93,11 +93,6 @@ alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-### 5. Celery Worker 실행 (별도 터미널)
-
-```bash
-celery -A worker.celery_app worker --loglevel=info
-```
 
 ## API 엔드포인트
 
@@ -108,12 +103,10 @@ celery -A worker.celery_app worker --loglevel=info
 - `GET /projects/{id}/edit-state` - 프로젝트 edit-state 조회
 
 ### 음악
-- `POST /projects/{id}/music/upload-init` - 음악 업로드 presigned URL 발급
-- `POST /projects/{id}/music/commit` - 음악 업로드 완료 후 프로젝트에 연결
+- `POST /projects/{id}/music/upload` - 음악 파일 업로드 및 프로젝트에 연결 (multipart/form-data)
 
 ### 레이어
-- `POST /tracks/{id}/layers/upload-init` - 레이어 업로드 presigned URL 발급
-- `POST /tracks/{id}/layers` - 레이어 생성 (VIDEO 또는 JSON 기반)
+- `POST /tracks/{id}/layers/upload` - 레이어 파일 업로드, 프로젝트 연결, 워커 enqueue (multipart/form-data)
 - `GET /tracks/{id}/layers/{layer_id}` - 레이어 조회
 - `PATCH /tracks/{id}/layers/{layer_id}` - 레이어 업데이트
 - `DELETE /tracks/{id}/layers/{layer_id}` - 레이어 삭제
@@ -139,6 +132,41 @@ FastAPI 기본 Swagger UI 및 ReDoc 문서를 사용합니다.
   - ReDoc: `http://127.0.0.1:8000/redoc`
 - OpenAPI 스펙(JSON):
   - `http://127.0.0.1:8000/openapi.json`
+
+## API 테스트
+
+### 방법 1: Swagger UI (가장 간단, 권장)
+
+서버 실행 후 브라우저에서 접속:
+```
+http://localhost:8000/docs
+```
+
+각 엔드포인트를 클릭하여 "Try it out" 버튼으로 직접 테스트할 수 있습니다.
+
+### 방법 2: Python 테스트 스크립트
+
+```bash
+# 전체 테스트 실행
+python tests/test_api_examples.py
+
+# 개별 테스트
+python -c "from tests.test_api_examples import test_create_project; test_create_project()"
+```
+
+### 방법 3: curl 명령어
+
+```bash
+# 프로젝트 생성
+curl -X POST http://localhost:8000/projects \
+  -H "Content-Type: application/json" \
+  -d '{"title": "테스트 프로젝트"}'
+
+# 프로젝트 목록
+curl -X GET http://localhost:8000/projects
+```
+
+더 많은 예제는 `tests/README.md`를 참고하세요.
 
 ## 프로젝트 구조
 

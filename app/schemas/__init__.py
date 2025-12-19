@@ -1,7 +1,7 @@
 from app.schemas.common import CursorResponse, ErrorResponse
 from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
-from app.schemas.music import MusicUploadInit, MusicCommit
-from app.schemas.layer import LayerCreate, LayerResponse, LayerUpdate, LayerUploadInit
+from app.schemas.music import MusicUploadRequest, MusicUploadResponse
+from app.schemas.layer import LayerUploadRequest, LayerUploadResponse, LayerResponse, LayerUpdate
 from app.schemas.asset import AssetPresignRequest, AssetPresignResponse, AssetPresignBatchRequest
 from app.schemas.keyframe import KeyframeUpsert, KeyframeResponse
 
@@ -11,12 +11,12 @@ __all__ = [
     "ProjectCreate",
     "ProjectResponse",
     "ProjectUpdate",
-    "MusicUploadInit",
-    "MusicCommit",
-    "LayerCreate",
+    "MusicUploadRequest",
+    "MusicUploadResponse",
+    "LayerUploadRequest",
+    "LayerUploadResponse",
     "LayerResponse",
     "LayerUpdate",
-    "LayerUploadInit",
     "AssetPresignRequest",
     "AssetPresignResponse",
     "AssetPresignBatchRequest",
