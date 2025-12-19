@@ -31,6 +31,7 @@ def _ensure_bucket(bucket: str) -> None:
 
 async def _update_source_success(
     sessionmaker: async_sessionmaker,
+    engine: Any,
     source_id: int,
     object_key: str,
     meta: dict[str, Any],
@@ -49,9 +50,17 @@ async def _update_source_success(
         source.error_message = None
 
         await session.commit()
+    
+    # 세션 종료 후 engine 정리
+    await engine.dispose()
 
 
-async def _update_source_failed(sessionmaker: async_sessionmaker, source_id: int, message: str) -> None:
+async def _update_source_failed(
+    sessionmaker: async_sessionmaker,
+    engine: Any,
+    source_id: int,
+    message: str,
+) -> None:
     async with sessionmaker() as session:
         source = await session.get(SkeletonSource, source_id)
         if not source:
@@ -59,6 +68,9 @@ async def _update_source_failed(sessionmaker: async_sessionmaker, source_id: int
         source.status = AssetStatus.FAILED
         source.error_message = message[:500]
         await session.commit()
+    
+    # 세션 종료 후 engine 정리
+    await engine.dispose()
 
 
 def _build_object_key(project_id: int, track_slot: int, source_id: int) -> str:
@@ -111,39 +123,59 @@ def _upload_json(object_key: str, payload: bytes) -> None:
     )
 
 
-def _get_sessionmaker() -> async_sessionmaker[AsyncSession]:
-    return async_sessionmaker(
-        get_engine(),
+def _get_sessionmaker_and_engine() -> tuple[async_sessionmaker[AsyncSession], Any]:
+    """각 작업마다 새로운 engine과 sessionmaker를 생성
+    
+    캐시된 engine을 사용하면 다른 이벤트 루프에 연결된 연결을 사용할 수 있어
+    'attached to a different loop' 오류가 발생할 수 있습니다.
+    따라서 각 작업마다 새로운 engine을 생성합니다.
+    
+    Returns:
+        (sessionmaker, engine) 튜플 - 사용 후 engine.dispose() 호출 필요
+    """
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
+    from app.core.config import get_settings
+    
+    settings = get_settings()
+    # 각 작업마다 새로운 engine 생성 (캐시 사용 안 함)
+    engine = create_async_engine(
+        settings.sqlalchemy_database_url(),
+        pool_pre_ping=True,
+        # 각 작업마다 독립적인 연결 풀 사용
+        pool_size=1,
+        max_overflow=0,
+    )
+    
+    sessionmaker = async_sessionmaker(
+        engine,
         class_=AsyncSession,
         expire_on_commit=False,
     )
+    
+    return sessionmaker, engine
 
 
 def _run_async(coro):
     """Celery 워커에서 async 함수를 안전하게 실행하는 헬퍼
     
-    각 작업마다 독립적인 이벤트 루프를 생성하고,
-    nest_asyncio를 조건부로 적용하여 중첩된 이벤트 루프를 허용합니다.
+    각 작업마다 완전히 독립적인 이벤트 루프를 생성합니다.
+    nest_asyncio는 worker_process_init에서 이미 적용되어 있습니다.
     """
+    # 기존 이벤트 루프 백업
+    old_loop = None
+    try:
+        old_loop = asyncio.get_event_loop()
+        if old_loop.is_closed():
+            old_loop = None
+    except RuntimeError:
+        pass
+    
     # 완전히 새로운 이벤트 루프 생성 (각 작업마다 독립적)
     new_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(new_loop)
     
-    # nest_asyncio 적용 (uvloop가 아닌 경우에만, 한 번만)
     try:
-        import nest_asyncio
-        loop_type = type(new_loop).__name__
-        if 'uvloop' not in loop_type.lower():
-            # 표준 asyncio 루프인 경우에만 패치
-            # 전역적으로 한 번만 적용 (이미 적용되었는지 확인)
-            if not getattr(_run_async, '_nest_asyncio_applied', False):
-                nest_asyncio.apply()
-                _run_async._nest_asyncio_applied = True
-    except (ValueError, AttributeError, ImportError, Exception):
-        # 패치 실패해도 계속 진행 (단순 루프로 동작)
-        pass
-    
-    try:
+        # nest_asyncio가 이미 적용되어 있으므로 run_until_complete 사용 가능
         return new_loop.run_until_complete(coro)
     finally:
         # 루프 정리
@@ -154,14 +186,24 @@ def _run_async(coro):
                 for task in pending:
                     task.cancel()
                 # 취소된 task들 완료 대기
-                new_loop.run_until_complete(
-                    asyncio.gather(*pending, return_exceptions=True)
-                )
+                try:
+                    new_loop.run_until_complete(
+                        asyncio.gather(*pending, return_exceptions=True)
+                    )
+                except Exception:
+                    pass
         except Exception:
             pass
         finally:
             new_loop.close()
-            asyncio.set_event_loop(None)
+            # 기존 루프 복원 (있었던 경우)
+            if old_loop is not None and not old_loop.is_closed():
+                try:
+                    asyncio.set_event_loop(old_loop)
+                except Exception:
+                    asyncio.set_event_loop(None)
+            else:
+                asyncio.set_event_loop(None)
 
 
 @celery_app.task(name="extract_skeleton", bind=True, max_retries=3)
@@ -181,7 +223,8 @@ def extract_skeleton_task(
         track_slot,
     )
 
-    sessionmaker = _get_sessionmaker()
+    # 각 작업마다 새로운 engine과 sessionmaker 생성
+    sessionmaker, engine = _get_sessionmaker_and_engine()
 
     try:
         # 1) Download video from MinIO
@@ -200,6 +243,7 @@ def extract_skeleton_task(
         _run_async(
             _update_source_success(
                 sessionmaker,
+                engine,
                 source_id,
                 object_key,
                 {
@@ -222,7 +266,9 @@ def extract_skeleton_task(
     except Exception as exc:  # noqa: BLE001
         logger.exception("Extract skeleton failed source_id=%s: %s", source_id, exc)
         try:
-            _run_async(_update_source_failed(sessionmaker, source_id, str(exc)))
+            # 실패 시에도 새로운 engine 생성 (이전 engine이 이미 dispose되었을 수 있음)
+            sessionmaker, engine = _get_sessionmaker_and_engine()
+            _run_async(_update_source_failed(sessionmaker, engine, source_id, str(exc)))
         except Exception:
             logger.exception("Failed to mark source as FAILED for %s", source_id)
         raise self.retry(exc=exc, countdown=60)
