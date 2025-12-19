@@ -119,6 +119,51 @@ def _get_sessionmaker() -> async_sessionmaker[AsyncSession]:
     )
 
 
+def _run_async(coro):
+    """Celery 워커에서 async 함수를 안전하게 실행하는 헬퍼
+    
+    각 작업마다 독립적인 이벤트 루프를 생성하고,
+    nest_asyncio를 조건부로 적용하여 중첩된 이벤트 루프를 허용합니다.
+    """
+    # 완전히 새로운 이벤트 루프 생성 (각 작업마다 독립적)
+    new_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(new_loop)
+    
+    # nest_asyncio 적용 (uvloop가 아닌 경우에만, 한 번만)
+    try:
+        import nest_asyncio
+        loop_type = type(new_loop).__name__
+        if 'uvloop' not in loop_type.lower():
+            # 표준 asyncio 루프인 경우에만 패치
+            # 전역적으로 한 번만 적용 (이미 적용되었는지 확인)
+            if not getattr(_run_async, '_nest_asyncio_applied', False):
+                nest_asyncio.apply()
+                _run_async._nest_asyncio_applied = True
+    except (ValueError, AttributeError, ImportError, Exception):
+        # 패치 실패해도 계속 진행 (단순 루프로 동작)
+        pass
+    
+    try:
+        return new_loop.run_until_complete(coro)
+    finally:
+        # 루프 정리
+        try:
+            # 모든 pending task 취소
+            pending = asyncio.all_tasks(new_loop)
+            if pending:
+                for task in pending:
+                    task.cancel()
+                # 취소된 task들 완료 대기
+                new_loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
+        except Exception:
+            pass
+        finally:
+            new_loop.close()
+            asyncio.set_event_loop(None)
+
+
 @celery_app.task(name="extract_skeleton", bind=True, max_retries=3)
 def extract_skeleton_task(
     self,
@@ -152,7 +197,7 @@ def extract_skeleton_task(
 
         # 4) Update DB -> READY
         meta = data.get("meta", {})
-        asyncio.run(
+        _run_async(
             _update_source_success(
                 sessionmaker,
                 source_id,
@@ -177,7 +222,7 @@ def extract_skeleton_task(
     except Exception as exc:  # noqa: BLE001
         logger.exception("Extract skeleton failed source_id=%s: %s", source_id, exc)
         try:
-            asyncio.run(_update_source_failed(sessionmaker, source_id, str(exc)))
+            _run_async(_update_source_failed(sessionmaker, source_id, str(exc)))
         except Exception:
             logger.exception("Failed to mark source as FAILED for %s", source_id)
         raise self.retry(exc=exc, countdown=60)

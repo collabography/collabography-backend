@@ -49,9 +49,12 @@ def enqueue_skeleton_extraction(
     """
     celery_app = get_celery_app()
 
-    # worker/tasks/extract_skeleton.py의 task를 import
-    # 동적 import로 순환 참조 방지
-    from worker.tasks.extract_skeleton import extract_skeleton_task
+    # worker/tasks/extract_skeleton.py의 task를 동적 import
+    # 이렇게 하면 API 서버에서 worker 모듈을 import할 때
+    # worker/celery_app.py가 로드되지 않아 nest_asyncio 충돌 방지
+    import importlib
+    extract_skeleton_module = importlib.import_module("worker.tasks.extract_skeleton")
+    extract_skeleton_task = extract_skeleton_module.extract_skeleton_task
 
     task = extract_skeleton_task.delay(
         source_id=source_id,
