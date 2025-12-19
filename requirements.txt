@@ -21,7 +21,7 @@ httpx==0.28.1
 mutagen==1.47.0
 
 # Skeleton extraction
-mediapipe==0.10.20
+mediapipe==0.10.18
 opencv-python==4.10.0.84
 numpy==1.26.4
 tqdm==4.66.5
