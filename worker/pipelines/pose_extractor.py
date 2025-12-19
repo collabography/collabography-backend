@@ -93,14 +93,43 @@ def get_video_meta(path: str) -> tuple[float, int, int, int]:
 
 
 def normalize_pose(kps_norm: np.ndarray) -> np.ndarray:
-    """Hip-center translation + shoulder-hip scale normalization."""
+    """
+    Render-friendly normalization (motion preserved)
+
+    - Keep original hip-center translation (person moves in the frame)
+    - Stabilize body scale using shoulder-center ↔ hip-center length
+    - Return x,y still in [0,1] space for easy frontend rendering
+
+    Notes:
+    - This is NOT motion-comparison normalization.
+    - It is intended for rendering consistency (size/bias correction).
+    """
+
+    # centers in original image-normalized coordinates
     hip_center = 0.5 * (kps_norm[L_HIP] + kps_norm[R_HIP])
-    kps = kps_norm - hip_center[None, :]
     shoulder_center = 0.5 * (kps_norm[L_SH] + kps_norm[R_SH])
-    scale = np.linalg.norm(shoulder_center - hip_center)
-    if scale < 1e-6:
-        scale = 1.0
-    return kps / scale
+
+    # remove translation (relative pose)
+    kps_rel = kps_norm - hip_center[None, :]
+
+    # scale normalization factor (shoulder-hip)
+    bone_len = np.linalg.norm(shoulder_center - hip_center)
+    if bone_len < 1e-6:
+        # no reliable scale; keep original
+        return np.clip(kps_norm, 0.0, 1.0)
+
+    kps_rel = kps_rel / bone_len
+
+    # target visual scale (tunable constant)
+    # - larger => person appears larger
+    # - smaller => person appears smaller
+    TARGET_SCALE = 0.25
+    kps_rel = kps_rel * TARGET_SCALE
+
+    # restore translation (motion preserved)
+    kps_view = kps_rel + hip_center[None, :]
+
+    return np.clip(kps_view, 0.0, 1.0)
 
 
 def extract_pose_to_json(
@@ -150,6 +179,7 @@ def extract_pose_to_json(
                     kps_norm[name2i[jn], 1] = float(kp.y)
                     conf[name2i[jn]] = float(getattr(kp, "visibility", 1.0))
 
+            # render-friendly normalization (motion preserved)
             kps_n = normalize_pose(kps_norm) if has_pose else kps_norm
 
             keypoints, pose_vec, valid_mask = [], [], []
@@ -187,7 +217,7 @@ def extract_pose_to_json(
             "pose_model": "mediapipe_pose_landmarker_tasks_lite",
             "num_joints": J,
             "joints": JOINT_NAMES,
-            "normalization": "hip_center + shoulder_hip_scale",
+            "normalization": "render_scale_only (motion preserved; shoulder_hip)",
             "note": "COCO17 mapped from MP33; no fps resampling",
         },
         "frames": frames_out,
