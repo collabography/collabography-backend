@@ -1,11 +1,9 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-if TYPE_CHECKING:
-    from app.schemas.keyframe import KeyframeResponse
+from app.schemas.keyframe import KeyframeResponse
 
 
 class ProjectCreate(BaseModel):
@@ -35,23 +33,6 @@ class ProjectResponse(BaseModel):
         from_attributes = True
 
 
-class EditStateResponse(BaseModel):
-    """프로젝트 edit-state 응답 (프론트 렌더링용 전체 상태)"""
-
-    project: ProjectResponse
-    tracks: list["TrackEditState"]
-
-
-class TrackEditState(BaseModel):
-    """트랙별 편집 상태"""
-
-    id: int
-    slot: int
-    display_name: str | None = None
-    layers: list["LayerEditState"]
-    keyframes: list["KeyframeResponse"]
-
-
 class LayerEditState(BaseModel):
     """레이어 편집 상태 (source 포함)"""
 
@@ -66,4 +47,21 @@ class LayerEditState(BaseModel):
     source_fps: float | None = None
     source_num_frames: int | None = None
     source_num_joints: int | None = None
+
+
+class TrackEditState(BaseModel):
+    """트랙별 편집 상태"""
+
+    id: int
+    slot: int
+    display_name: str | None = None
+    layers: list[LayerEditState]
+    keyframes: list[KeyframeResponse]
+
+
+class EditStateResponse(BaseModel):
+    """프로젝트 edit-state 응답 (프론트 렌더링용 전체 상태)"""
+
+    project: ProjectResponse
+    tracks: list[TrackEditState]
 

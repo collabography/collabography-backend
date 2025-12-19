@@ -32,9 +32,9 @@ async def create_project(
     responses={422: {"model": ErrorResponse}},
 )
 async def list_projects(
-    limit: Annotated[int, Query(ge=1, le=100, default=50)] = 50,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query()] = None,
-    db: Annotated[AsyncSession, Depends(get_db)] = Depends(get_db),
 ) -> CursorResponse[ProjectResponse]:
     """프로젝트 목록 조회"""
     projects = await ProjectsService.list_projects(db, limit=limit, cursor=cursor)
