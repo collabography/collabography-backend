@@ -11,7 +11,7 @@ from app.core.errors import NotFoundError
 from app.models import Track, SkeletonSource, SkeletonLayer, AssetStatus
 from app.schemas.layer import LayerUpdate, LayerResponse
 from app.integrations.minio_client import get_minio_client
-from app.integrations.kafka_client import enqueue_skeleton_extraction
+from app.integrations.celery_client import enqueue_skeleton_extraction
 from app.core.config import get_settings
 
 
@@ -79,13 +79,14 @@ class LayersService:
         db.add(layer)
         await db.flush()
 
-        # Kafka에 스켈레톤 추출 작업 enqueue
-        enqueue_skeleton_extraction(
+        # Celery에 스켈레톤 추출 작업 enqueue
+        task_id = enqueue_skeleton_extraction(
             source_id=source.id,
             video_object_key=object_key,
             project_id=track.project_id,
             track_slot=track.slot,
         )
+        # task_id는 로깅 등에 사용 가능 (필요시)
 
         await db.commit()
         await db.refresh(layer)

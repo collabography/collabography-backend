@@ -11,7 +11,7 @@ Collabography는 3명의 댄서(3개 Track)의 스켈레톤 클립(Skeleton Laye
 - **FastAPI**: API 서버
 - **PostgreSQL**: 데이터베이스
 - **MinIO**: 객체 스토리지 (S3 호환)
-- **Kafka**: 메시지 큐 (워커 작업 enqueue)
+- **Celery + Redis**: 비동기 작업 큐
 - **Alembic**: 데이터베이스 마이그레이션
 
 ## 로컬 실행 (Docker Compose 권장)
@@ -31,9 +31,9 @@ MINIO_SECRET_KEY=minioadmin
 MINIO_BUCKET=collabography
 MINIO_SECURE=false
 
-# Kafka
-KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-KAFKA_TOPIC_SKELETON_EXTRACTION=skeleton-extraction
+# Celery
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
 ```
 
 ### 2. Docker Compose로 실행
@@ -46,8 +46,7 @@ docker-compose up -d
 이 명령은 다음 서비스를 시작합니다:
 - PostgreSQL (포트 5432)
 - MinIO (포트 9000, 콘솔 9001)
-- Zookeeper (포트 2181)
-- Kafka (포트 9092)
+- Redis (포트 6379)
 - API 서버 (포트 8000)
 
 ### 3. 데이터베이스 마이그레이션

@@ -23,4 +23,3 @@ celery_app.conf.update(
 
 # Task 모듈 자동 발견
 celery_app.autodiscover_tasks(["worker.tasks"])
-

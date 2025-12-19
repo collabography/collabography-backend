@@ -11,6 +11,7 @@ minio==7.2.13
 # Database migrations
 alembic==1.14.0
 
-# Kafka
-kafka-python==2.0.2
+# Celery
+celery==5.4.0
+redis==5.2.0
 
