@@ -1,12 +1,11 @@
 from datetime import datetime
-from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import NotFoundError
-from app.models import Project, Track, SkeletonLayer, SkeletonSource, TrackPositionKeyframe
+from app.models import Project, Track, SkeletonLayer
 from app.schemas.project import ProjectCreate, ProjectResponse, EditStateResponse, TrackEditState, LayerEditState
 from app.schemas.keyframe import KeyframeResponse
 

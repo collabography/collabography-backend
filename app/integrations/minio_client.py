@@ -1,6 +1,5 @@
 from datetime import timedelta
 from functools import lru_cache
-from typing import Any
 
 from minio import Minio
 from minio.error import S3Error

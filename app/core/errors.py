@@ -1,4 +1,3 @@
-from typing import Any
 
 from fastapi import HTTPException, status
 from pydantic import BaseModel

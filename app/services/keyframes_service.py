@@ -1,12 +1,11 @@
 from datetime import datetime
-from decimal import Decimal
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
 from app.models import Track, TrackPositionKeyframe
-from app.schemas.keyframe import KeyframeUpsert, KeyframeResponse, KeyframeItem
+from app.schemas.keyframe import KeyframeUpsert, KeyframeResponse
 
 
 class KeyframesService:
